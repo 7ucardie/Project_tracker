@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Project Tracker</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#1c2330;--muted:#6b7380;--line:#e1e4ea;--accent:#2f6fed;--danger:#d64545;--hi:#d64545;--mid:#e0a020;--lo:#3a9d5d}
+@media (prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b2029;--text:#e6e9ef;--muted:#8d95a3;--line:#2a313d;--accent:#5b92ff}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--text)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--danger)}
+input,select,textarea{width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+label{display:block;margin:10px 0 4px;color:var(--muted);font-size:13px}
+.hidden{display:none!important}
+#lock{max-width:360px;margin:12vh auto;padding:0 16px}
+#lock .box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px}
+#lock h1{margin:0 0 4px;font-size:22px}
+.err{color:var(--danger);min-height:1.4em;margin:8px 0 0}
+.note{color:var(--muted);font-size:13px}
+header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0 8px 0 0}
+header .sp{flex:1}
+header select,header input{width:auto;min-width:140px}
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:16px;align-items:start}
+@media(max-width:760px){.board{grid-template-columns:1fr}}
+.col{background:color-mix(in srgb,var(--line) 40%,transparent);border-radius:12px;padding:10px;min-height:120px}
+.col.over{outline:2px dashed var(--accent)}
+.col h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 4px 10px;display:flex;justify-content:space-between}
+.task{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--lo);border-radius:8px;padding:10px;margin-bottom:8px;cursor:grab}
+.task.p2{border-left-color:var(--mid)}.task.p3{border-left-color:var(--hi)}
+.task b{display:block;word-break:break-word}
+.task .meta{color:var(--muted);font-size:12px;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}
+.task .late{color:var(--danger);font-weight:600}
+.task .n{white-space:pre-wrap;color:var(--muted);font-size:13px;margin-top:4px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);width:min(440px,92vw);padding:20px}
+dialog::backdrop{background:#0006}
+.row{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+.empty{padding:40px 16px;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<section id="lock">
+  <div class="box">
+    <h1>Project Tracker</h1>
+    <p class="note" id="lockHint"></p>
+    <form id="lockForm">
+      <label for="pw">Wachtwoord</label>
+      <input id="pw" type="password" autocomplete="current-password" required>
+      <div id="pw2wrap" class="hidden">
+        <label for="pw2">Herhaal wachtwoord</label>
+        <input id="pw2" type="password" autocomplete="new-password">
+      </div>
+      <p class="err" id="lockErr"></p>
+      <div class="row" style="justify-content:space-between;margin-top:8px">
+        <span class="note" id="strength"></span>
+        <button class="primary" id="lockBtn">Ontgrendel</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<main id="app" class="hidden">
+  <header>
+    <h1>Project Tracker</h1>
+    <select id="projectSel" aria-label="Project"></select>
+    <button id="addProject">+ Project</button>
+    <button id="renameProject">Hernoem</button>
+    <button id="delProject" class="danger">Verwijder</button>
+    <input id="search" type="search" placeholder="Zoeken…">
+    <span class="sp"></span>
+    <button class="primary" id="addTask">+ Taak</button>
+    <button id="menuBtn">⋯</button>
+    <button id="lockNow">Vergrendel</button>
+  </header>
+  <div id="board" class="board"></div>
+  <div id="empty" class="empty hidden">Maak eerst een project aan.</div>
+</main>
+
+<dialog id="taskDlg">
+  <form method="dialog" id="taskForm">
+    <h3 id="taskTitle" style="margin:0 0 6px">Taak</h3>
+    <label>Titel</label><input id="tTitle" required maxlength="200">
+    <label>Notities</label><textarea id="tNotes" rows="3" maxlength="4000"></textarea>
+    <label>Status</label>
+    <select id="tStatus"><option value="todo">Te doen</option><option value="doing">Bezig</option><option value="done">Klaar</option></select>
+    <label>Prioriteit</label>
+    <select id="tPrio"><option value="1">Laag</option><option value="2">Normaal</option><option value="3">Hoog</option></select>
+    <label>Deadline</label><input id="tDue" type="date">
+    <div class="row">
+      <button type="button" id="tDelete" class="danger">Verwijder</button>
+      <button type="button" id="tCancel">Annuleer</button>
+      <button class="primary">Opslaan</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="menuDlg">
+  <h3 style="margin:0 0 10px">Beheer</h3>
+  <div style="display:grid;gap:8px">
+    <button id="exportBtn">Exporteer versleutelde back-up</button>
+    <button id="importBtn">Importeer back-up</button>
+    <button id="pwBtn">Wachtwoord wijzigen</button>
+    <button id="wipeBtn" class="danger">Alle data wissen</button>
+  </div>
+  <input type="file" id="file" accept=".json" class="hidden">
+  <div class="row"><button id="menuClose">Sluiten</button></div>
+</dialog>
+
+<script>
+'use strict';
+const KEY = 'pt_vault_v1', ITER = 600000, IDLE_MS = 10 * 60 * 1000;
+const $ = id => document.getElementById(id);
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+/* ---------- crypto ---------- */
+async function deriveKey(pw, salt, iter) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function seal(state) { // state = {key, salt, iter}
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, state.key, enc.encode(JSON.stringify(data)));
+  return { v: 1, iter: state.iter, salt: b64(state.salt), iv: b64(iv), ct: b64(ct) };
+}
+async function open(vault, pw) {
+  const salt = unb64(vault.salt), key = await deriveKey(pw, salt, vault.iter);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(vault.iv) }, key, unb64(vault.ct));
+  return { data: JSON.parse(dec.decode(pt)), session: { key, salt, iter: vault.iter } };
+}
+async function persist() { localStorage.setItem(KEY, JSON.stringify(await seal(session))); }
+
+/* ---------- state ---------- */
+let data = null, session = null, current = null, editing = null, fails = 0, idleT;
+const uid = () => crypto.randomUUID();
+
+/* ---------- lock screen ---------- */
+const getVault = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
+function showLock() {
+  const v = getVault();
+  $('lock').classList.remove('hidden'); $('app').classList.add('hidden');
+  $('pw').value = $('pw2').value = ''; $('lockErr').textContent = '';
+  $('pw2wrap').classList.toggle('hidden', !!v);
+  $('pw2').required = !v;
+  $('pw').autocomplete = v ? 'current-password' : 'new-password';
+  $('lockBtn').textContent = v ? 'Ontgrendel' : 'Maak kluis aan';
+  $('lockHint').textContent = v ? 'Voer je wachtwoord in om je projecten te openen.'
+    : 'Eerste keer: kies een sterk wachtwoord (min. 12 tekens). Er is geen herstel mogelijk als je het vergeet.';
+  $('pw').focus();
+}
+$('pw').addEventListener('input', () => {
+  if (getVault()) return;
+  const n = $('pw').value.length;
+  $('strength').textContent = n ? (n < 12 ? 'Te kort' : n < 16 ? 'Redelijk' : 'Goed') : '';
+});
+$('lockForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const pw = $('pw').value, err = $('lockErr'), btn = $('lockBtn');
+  btn.disabled = true; err.textContent = '';
+  try {
+    const v = getVault();
+    if (!v) {
+      if (pw.length < 12) throw new Error('Wachtwoord moet minimaal 12 tekens zijn.');
+      if (pw !== $('pw2').value) throw new Error('Wachtwoorden komen niet overeen.');
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      session = { key: await deriveKey(pw, salt, ITER), salt, iter: ITER };
+      const pid = uid();
+      data = { projects: [{ id: pid, name: 'Mijn eerste project' }], tasks: [] };
+      await persist();
+    } else {
+      try { ({ data, session } = await open(v, pw)); fails = 0; }
+      catch {
+        fails++;
+        await new Promise(r => setTimeout(r, Math.min(30000, 1000 * 2 ** (fails - 1))));
+        throw new Error('Onjuist wachtwoord.');
+      }
+    }
+    startApp();
+  } catch (x) { err.textContent = x.message; }
+  btn.disabled = false;
+});
+function lock() {
+  data = session = null; clearTimeout(idleT);
+  $('taskDlg').close?.(); $('menuDlg').close?.();
+  showLock();
+}
+function bumpIdle() { clearTimeout(idleT); if (session) idleT = setTimeout(lock, IDLE_MS); }
+['click', 'keydown', 'pointerdown'].forEach(ev => addEventListener(ev, bumpIdle, true));
+$('lockNow').onclick = lock;
+
+/* ---------- app ---------- */
+function startApp() {
+  $('lock').classList.add('hidden'); $('app').classList.remove('hidden');
+  current = data.projects[0]?.id || null;
+  bumpIdle(); render();
+}
+const COLS = [['todo', 'Te doen'], ['doing', 'Bezig'], ['done', 'Klaar']];
+const PRIO = { 1: 'Laag', 2: 'Normaal', 3: 'Hoog' };
+function el(tag, props = {}, ...kids) {
+  const n = Object.assign(document.createElement(tag), props);
+  kids.forEach(k => n.append(k)); return n;
+}
+function render() {
+  const sel = $('projectSel'); sel.replaceChildren();
+  data.projects.forEach(p => sel.append(el('option', { value: p.id, textContent: p.name, selected: p.id === current })));
+  const has = !!current;
+  $('board').classList.toggle('hidden', !has); $('empty').classList.toggle('hidden', has);
+  ['renameProject', 'delProject', 'addTask', 'search'].forEach(i => $(i).disabled = !has);
+  const board = $('board'); board.replaceChildren();
+  if (!has) return;
+  const q = $('search').value.trim().toLowerCase();
+  const tasks = data.tasks.filter(t => t.project === current &&
+    (!q || (t.title + ' ' + t.notes).toLowerCase().includes(q)));
+  const today = new Date().toISOString().slice(0, 10);
+  for (const [st, label] of COLS) {
+    const items = tasks.filter(t => t.status === st).sort((a, b) => b.prio - a.prio || (a.due || '9').localeCompare(b.due || '9'));
+    const col = el('div', { className: 'col' }, el('h2', {}, el('span', { textContent: label }), el('span', { textContent: items.length })));
+    col.ondragover = e => { e.preventDefault(); col.classList.add('over'); };
+    col.ondragleave = () => col.classList.remove('over');
+    col.ondrop = async e => {
+      e.preventDefault(); col.classList.remove('over');
+      const t = data.tasks.find(x => x.id === e.dataTransfer.getData('text/plain'));
+      if (t && t.status !== st) { t.status = st; await persist(); render(); }
+    };
+    items.forEach(t => {
+      const meta = el('div', { className: 'meta' }, el('span', { textContent: PRIO[t.prio] }));
+      if (t.due) meta.append(el('span', { textContent: '📅 ' + t.due, className: t.status !== 'done' && t.due < today ? 'late' : '' }));
+      const card = el('div', { className: 'task p' + t.prio, draggable: true }, el('b', { textContent: t.title }), meta);
+      if (t.notes) card.append(el('div', { className: 'n', textContent: t.notes }));
+      card.ondragstart = e => e.dataTransfer.setData('text/plain', t.id);
+      card.onclick = () => openTask(t);
+      col.append(card);
+    });
+    board.append(col);
+  }
+}
+$('projectSel').onchange = e => { current = e.target.value; render(); };
+$('search').oninput = render;
+$('addProject').onclick = async () => {
+  const name = prompt('Naam van het project:')?.trim(); if (!name) return;
+  const p = { id: uid(), name: name.slice(0, 100) }; data.projects.push(p); current = p.id;
+  await persist(); render();
+};
+$('renameProject').onclick = async () => {
+  const p = data.projects.find(x => x.id === current);
+  const name = prompt('Nieuwe naam:', p.name)?.trim(); if (!name) return;
+  p.name = name.slice(0, 100); await persist(); render();
+};
+$('delProject').onclick = async () => {
+  const p = data.projects.find(x => x.id === current);
+  if (!confirm(`Project "${p.name}" en alle taken verwijderen?`)) return;
+  data.projects = data.projects.filter(x => x.id !== current);
+  data.tasks = data.tasks.filter(t => t.project !== current);
+  current = data.projects[0]?.id || null; await persist(); render();
+};
+
+/* ---------- taak dialoog ---------- */
+function openTask(t) {
+  editing = t;
+  $('taskTitle').textContent = t ? 'Taak bewerken' : 'Nieuwe taak';
+  $('tTitle').value = t?.title || ''; $('tNotes').value = t?.notes || '';
+  $('tStatus').value = t?.status || 'todo'; $('tPrio').value = t?.prio || 2; $('tDue').value = t?.due || '';
+  $('tDelete').classList.toggle('hidden', !t);
+  $('taskDlg').showModal(); $('tTitle').focus();
+}
+$('addTask').onclick = () => openTask(null);
+$('tCancel').onclick = () => $('taskDlg').close();
+$('taskForm').addEventListener('submit', async () => {
+  const f = { title: $('tTitle').value.trim(), notes: $('tNotes').value, status: $('tStatus').value, prio: +$('tPrio').value, due: $('tDue').value };
+  if (!f.title) return;
+  if (editing) Object.assign(editing, f); else data.tasks.push({ id: uid(), project: current, ...f });
+  await persist(); render();
+});
+$('tDelete').onclick = async () => {
+  if (!confirm('Taak verwijderen?')) return;
+  data.tasks = data.tasks.filter(t => t !== editing); $('taskDlg').close(); await persist(); render();
+};
+
+/* ---------- beheer ---------- */
+$('menuBtn').onclick = () => $('menuDlg').showModal();
+$('menuClose').onclick = () => $('menuDlg').close();
+$('exportBtn').onclick = async () => {
+  const blob = new Blob([JSON.stringify(await seal(session))], { type: 'application/json' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: `tracker-backup-${new Date().toISOString().slice(0, 10)}.json` });
+  a.click(); URL.revokeObjectURL(a.href);
+};
+$('importBtn').onclick = () => $('file').click();
+$('file').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const v = JSON.parse(await f.text());
+    const pw = prompt('Wachtwoord van deze back-up:'); if (pw == null) return;
+    const r = await open(v, pw);
+    if (!confirm('Huidige data vervangen door deze back-up?')) return;
+    data = r.data; session = r.session; current = data.projects[0]?.id || null;
+    await persist(); render(); $('menuDlg').close();
+  } catch { alert('Importeren mislukt: bestand of wachtwoord onjuist.'); }
+};
+$('pwBtn').onclick = async () => {
+  const old = prompt('Huidig wachtwoord:'); if (old == null) return;
+  try { await open(getVault(), old); } catch { return alert('Huidig wachtwoord onjuist.'); }
+  const n = prompt('Nieuw wachtwoord (min. 12 tekens):'); if (n == null) return;
+  if (n.length < 12) return alert('Te kort.');
+  if (prompt('Herhaal nieuw wachtwoord:') !== n) return alert('Komt niet overeen.');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  session = { key: await deriveKey(n, salt, ITER), salt, iter: ITER };
+  await persist(); alert('Wachtwoord gewijzigd.');
+};
+$('wipeBtn').onclick = () => {
+  if (!confirm('ALLE data permanent wissen uit deze browser?')) return;
+  localStorage.removeItem(KEY); lock();
+};
+
+if (!crypto?.subtle) document.body.textContent = 'Deze pagina vereist HTTPS (WebCrypto).';
+else showLock();
+</script>
+</body>
+</html>
